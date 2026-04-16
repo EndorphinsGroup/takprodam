@@ -1,52 +1,40 @@
-import os, requests, google.generativeai as genai
+import os, requests
 
-# Загрузка настроек
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 USER_ID = os.getenv('TELEGRAM_USER_ID')
 TAK_TOKEN = os.getenv('TAKPRODAM_TOKEN')
-GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 
-def send_test_message(text):
-    """Служебная функция для проверки связи"""
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": USER_ID, "text": text})
-
-def get_data():
-    headers = {"Authorization": f"Bearer {TAK_TOKEN}"}
-    
-    # 1. Проверяем площадки
-    src_res = requests.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers).json()
-    src_list = src_res.get('data', [])
-    if not src_list:
-        return "ERROR_NO_SOURCE", []
-    
-    source_id = src_list[0]['id']
-    
-    # 2. Берем товары БЕЗ ФИЛЬТРОВ (скидка от 0%)
-    params = {"source_id": source_id, "limit": 10}
-    prod_res = requests.get("https://api.takprodam.ru/v2/publisher/promotion/product/", headers=headers, params=params).json()
-    return source_id, prod_res.get('data', [])
+def send(text):
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                  json={"chat_id": USER_ID, "text": text})
 
 def main():
-    # ШАГ 1: Проверяем, может ли бот вообще тебе писать
-    send_test_message("🚀 Проверка связи! Я начал работу и ищу товары в Такпродам...")
-
-    source_id, products = get_data()
+    send("🕵️‍♂️ Начинаю поиск твоего ID площадки...")
+    headers = {"Authorization": f"Bearer {TAK_TOKEN}"}
     
-    if source_id == "ERROR_NO_SOURCE":
-        send_test_message("❌ Ошибка: В твоем аккаунте Такпродам не найдено ни одной площадки (Source).")
-        return
+    # Способ 1: Ищем в списке площадок
+    try:
+        r = requests.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers).json()
+        sources = r.get('data', [])
+        if sources:
+            send(f"✅ Нашел через площадки! Твой ID: {sources[0]['id']}")
+            return
+    except: pass
 
-    if not products:
-        send_test_message(f"🔎 Площадка найдена (ID: {source_id}), но список товаров ПУСТ. Возможно, нужно добавить товары в 'Избранное' или подождать обновления базы.")
-        return
+    # Способ 2: Ищем в истории твоих кликов/комиссий
+    try:
+        r = requests.get("https://api.takprodam.ru/v2/publisher/commission/", headers=headers).json()
+        commissions = r.get('data', [])
+        if commissions:
+            # Вытаскиваем ID из первой попавшейся комиссии
+            sid = commissions[0].get('source', {}).get('id')
+            if sid:
+                send(f"✅ Нашел через историю комиссий! Твой ID: {sid}")
+                return
+    except: pass
 
-    # ШАГ 2: Если товары есть, шлем первые 3 штуки для теста
-    send_test_message(f"✅ Нашел {len(products)} товаров! Сейчас оформлю и пришлю первые несколько...")
-    
-    for p in products[:3]: # Берем только 3 для теста
-        text = f"📦 {p['title']}\n💰 Цена: {p['price_discount']} ₽\n🔗 {p['tracking_link']}"
-        send_test_message(text)
+    send("❌ К сожалению, твой личный токен 'пустой'. Это часто бывает у админов.")
+    send("💡 Чтобы всё заработало, просто попроси ВЛАДЕЛЬЦА аккаунта (кто тебя пригласил) прислать его API-токен. Вставь его в GitHub вместо своего, и бот сразу начнет летать!")
 
 if __name__ == "__main__":
     main()
