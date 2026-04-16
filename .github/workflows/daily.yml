@@ -1,0 +1,21 @@
+name: Get Discounts
+on:
+  schedule:
+    - cron: '0 9 * * *' # Будет срабатывать каждый день в 12:00 по МСК
+  workflow_dispatch: # Позволяет запускать вручную
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - run: pip install requests google-generativeai
+      - name: Run
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          TAKPRODAM_TOKEN: ${{ secrets.TAKPRODAM_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python script.py
