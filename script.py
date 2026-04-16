@@ -1,46 +1,39 @@
 import os, requests, google.generativeai as genai
 
+# Загрузка настроек
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 USER_ID = os.getenv('TELEGRAM_USER_ID')
 TAK_TOKEN = os.getenv('TAKPRODAM_TOKEN')
 GEMINI_KEY = os.getenv('GEMINI_API_KEY')
 
-genai.configure(api_key=GEMINI_KEY)
-ai_model = genai.GenerativeModel('gemini-1.5-flash')
+def send_msg(text):
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                  json={"chat_id": USER_ID, "text": text, "parse_mode": "HTML"})
 
 def main():
     headers = {"Authorization": f"Bearer {TAK_TOKEN}"}
+    send_msg("⚙️ Запускаю проверку прав доступа...")
+
+    # Пытаемся узнать, кто мы для сервера
+    r = requests.get("https://api.takprodam.ru/v2/publisher/source/", headers=headers)
     
-    # Пытаемся получить список товаров БЕЗ указания ID площадки
-    # Это 'общий' список, который иногда доступен админам
-    url = "https://api.takprodam.ru/v2/publisher/product/"
+    if r.status_code == 401:
+        send_msg("❌ <b>Ошибка 401:</b> Твой токен не принят сервером. Проверь, нет ли в GitHub Secrets лишних пробелов.")
+        return
+    if r.status_code == 403:
+        send_msg("❌ <b>Ошибка 403:</b> Доступ запрещен. Твоему аккаунту админа ЗАПРЕЩЕНО пользоваться API. Нужно брать токен владельца.")
+        return
     
     try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        products = data.get('data', [])
-        
-        if not products:
-            # Если всё еще пусто, шлем тебе честный ответ от сервера
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": USER_ID, "text": f"🛑 Сервер ответил, но товаров не дал. Ответ: {data}"})
-            return
-
-        for p in products[:10]: # Берем первые 10 для теста
-            market = p.get('marketplace_title', 'Маркетплейс')
-            prompt = f"Оформи пост: {p['title']}, цена {p['price']}р. Название на {market}, Цена, 👉 по ССЫЛКЕ."
-            text = ai_model.generate_content(prompt).text.strip()
-            
-            # Используем tracking_link, который уже есть в товаре
-            link = f'<a href="{p["tracking_link"]}">по ССЫЛКЕ</a>'
-            final_text = text.replace("👉 по ССЫЛКЕ", f"👉 {link}")
-            
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": USER_ID, "text": final_text, "parse_mode": "HTML"})
-            
-    except Exception as e:
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                      json={"chat_id": USER_ID, "text": f"💥 Ошибка: {e}"})
+        sources = r.json().get('data', [])
+        if not sources:
+            send_msg("⚠️ Токен верный, но список площадок пуст. API не видит товаров для админа.")
+        else:
+            sid = sources[0]['id']
+            send_msg(f"✅ Успех! Найден ID: {sid}. Пытаюсь получить товары...")
+            # Тут пойдет логика получения товаров...
+    except:
+        send_msg(f"💥 Сервер выдал странный ответ (не JSON). Код ответа: {r.status_code}")
 
 if __name__ == "__main__":
     main()
